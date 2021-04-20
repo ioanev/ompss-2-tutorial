@@ -14,11 +14,7 @@ using namespace std;
 template<typename T>
 static inline T* lmalloc(size_t size)
 {
-#ifdef ENABLE_CLUSTER
 	T* alloc = (T*)nanos6_lmalloc(sizeof(T) * size);
-#else
-	T* alloc = new T[size];
-#endif
 	if (!alloc)
 		std::cerr << "Could not allocate "
 			  << "local memory"
@@ -34,12 +30,8 @@ static inline T* dmalloc(size_t size,
 		size_t num_dimensions = 0,
 		size_t *dimensions = NULL)
 {
-#ifdef ENABLE_CLUSTER
 	T* alloc = (T*)nanos6_dmalloc(sizeof(T) * size,
 			policy, num_dimensions, dimensions);
-#else
-	T* alloc = new T[size];
-#endif
 	if (!alloc)
 		std::cerr << "Could not allocate "
 			  << "distributed memory"
@@ -51,22 +43,14 @@ static inline T* dmalloc(size_t size,
 template<typename T>
 static inline void lfree(void* ptr, size_t size)
 {
-#ifdef ENABLE_CLUSTER
 	nanos6_lfree(ptr, sizeof(T) * size);
-#else
-	delete[] static_cast<T*>(ptr);
-#endif
 }
 
 /** @brief wrapper for the nanos6_dfree call */
 template<typename T>
 static inline void dfree(void* ptr, size_t size)
 {
-#ifdef ENABLE_CLUSTER
 	nanos6_dfree(ptr, sizeof(T) * size);
-#else
-	delete[] static_cast<T*>(ptr);
-#endif
 }
 
 #endif /* __MATMUL_MEMORY_HPP__ */

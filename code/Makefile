@@ -1,20 +1,27 @@
 BENCHMARK=matmul
 
 CXX      =mcxx --ompss-2
+CXXSRC   =matmul-ompss-2
 CXXFLAGS =-O3 -lnuma -lrt
-CXXFLAGS+=-DMATMUL_SIZE=512
+CXXDEFS +=-DMATMUL_SIZE=1024
 
 # option to enable cluster version
 ifdef version
-	ifeq "$(version)" "cluster"
-	CXXFLAGS+=-DENABLE_CLUSTER
+	ifeq "$(version)" "omp"
+	CXX   =g++ -fopenmp
+	CXXSRC=matmul-omp
+	endif
+endif
+ifdef version
+	ifeq "$(version)" "ompss-2-cluster"
+	CXXSRC=matmul-ompss-2-cluster
 	endif
 endif
 
-all   : ${BENCHMARK}
+all         : ${BENCHMARK}
 
-matmul: ${BENCHMARK}.cpp
-	$(CXX) $(CXXFLAGS) ${BENCHMARK}.cpp -o ${BENCHMARK}
+${BENCHMARK}: ${CXXSRC}.cpp
+	$(CXX) $(CXXFLAGS) $(CXXDEFS) ${CXXSRC}.cpp -o ${CXXSRC}
 
-clean :
-	rm -f ${BENCHMARK} *.o
+clean       :
+	rm -f ${CXXSRC} *.o

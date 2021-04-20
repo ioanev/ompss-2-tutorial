@@ -1,4 +1,4 @@
-/* An OmpSs-2 and OmpSs-2@Cluster implementation of matrix multiplication.
+/* An OmpSs-2 implementation of matrix multiplication.
  *
  * It receives as input the dimension N and constructs three NxN matrices
  * (+1 for verification). We can enable verification with the -v argument.
@@ -13,10 +13,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-#include "memory.hpp"
-
 /* task granularity */
-static int BSIZE;
+int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
 #define N MATMUL_SIZE
@@ -39,7 +37,6 @@ void run_matmul(const int&);
 void init_i_section(
 		const int&,
 		const int&,
-		const int&,
 		double (*)[N],
 		double (*)[N],
 		double (*)[N],
@@ -59,7 +56,7 @@ int
 main(int argc, char *argv[])
 {
         int c;
-	int verify;
+	int verify{0};
         int errexit{0};
         extern char *optarg;
         extern int optind, optopt, opterr;
@@ -100,26 +97,32 @@ main(int argc, char *argv[])
         } else {
 		info(verify);
 	}
+
+	if (N % BSIZE) {
+		std::cerr << "Error: The block size needs to "
+			  << "divide the matrix dimensions."
+			  << std::endl;
+		exit(EXIT_FAILURE);
+	}
  
-	mat_a = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
-	mat_b = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
-	mat_c = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
-	mat_r = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
+	mat_a = reinterpret_cast<double(*)[N]>(new double[N * N]);
+	mat_b = reinterpret_cast<double(*)[N]>(new double[N * N]);
+	mat_c = reinterpret_cast<double(*)[N]>(new double[N * N]);
+	mat_r = reinterpret_cast<double(*)[N]>(new double[N * N]);
 
         init_matrices();
         run_matmul(verify);
 
-	dfree<double>(mat_a, N * N);
-	dfree<double>(mat_b, N * N);
-	dfree<double>(mat_c, N * N);
-	dfree<double>(mat_r, N * N);
+	delete[] mat_a;
+	delete[] mat_b;
+	delete[] mat_c;
+	delete[] mat_r;
 
         return 0;
 }
 
-static void
+void
 init_i_section( const int &i,
-		const int &n,
 		const int &bsize,
 		double (*mat_a)[N],
 		double (*mat_b)[N],
@@ -127,7 +130,7 @@ init_i_section( const int &i,
 		double (*mat_r)[N])
 {
 	for (int ii = i; ii < i+bsize; ii++) {
-		for (int jj = 0; jj < n; jj++) {
+		for (int jj = 0; jj < N; jj++) {
 			mat_c[ii][jj] = 0.0;
 			mat_r[ii][jj] = 0.0;
 			mat_a[ii][jj] = ((ii + jj) & 0x0F) * 0x1P-4;
@@ -136,23 +139,23 @@ init_i_section( const int &i,
 	}
 }
 
-static void
+void
 init_matrices()
 {
 	int n{N};
 
-        for (int i = 0; i < n; i += BSIZE) {
+        for (int i = 0; i < N; i += BSIZE) {
 		#pragma oss task				\
 				out(mat_a[i;BSIZE][0;n],	\
 				    mat_b[i;BSIZE][0;n],	\
 				    mat_c[i;BSIZE][0;n],	\
 				    mat_r[i;BSIZE][0;n])	\
-				    firstprivate(i, n, BSIZE)
-		init_i_section(i, n, BSIZE, mat_a, mat_b, mat_c, mat_r);
+				firstprivate(i, BSIZE)
+		init_i_section(i, BSIZE, mat_a, mat_b, mat_c, mat_r);
         }
 }
 
-static void
+void
 multiply_block( const int &i,
 		const int &j,
 		const int &k,
@@ -170,14 +173,12 @@ multiply_block( const int &i,
 		}
 }
 
-static void
+void
 matmul_opt()
 {
-	int n{N};
-
-	for (int i = 0; i < n; i += BSIZE) {
-		for (int j = 0; j < n; j += BSIZE) {
-			for (int k = 0; k < n; k += BSIZE) {
+	for (int i = 0; i < N; i += BSIZE) {
+		for (int j = 0; j < N; j += BSIZE) {
+			for (int k = 0; k < N; k += BSIZE) {
 				#pragma oss task				\
 						in(   mat_a[i;BSIZE][k;BSIZE],	\
 						      mat_b[k;BSIZE][j;BSIZE])	\
@@ -187,67 +188,50 @@ matmul_opt()
 			}
 		}
 	}
+
+	#pragma oss taskwait
 }
 
-static void
+void
 matmul_ref()
 {
-	int n{N};
-
-	#pragma oss task			\
-			in( mat_a[0;n][0;n],	\
-			    mat_b[0;n][0;n])	\
-			out(mat_r[0;n][0;n])	\
-			firstprivate(n)
-        for (int i = 0; i < n; i++) {
-                for (int j = 0; j < n; j++) {
-                        for (int k = 0; k < n; k++) {
+        for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                        for (int k = 0; k < N; k++) {
                         	mat_r[i][j] += mat_a[i][k] * mat_b[k][j];
                         }
                 }
         }
 }
 
-static void
+void
 verify_results()
 {
-	int n{N};
+	double e_sum{0.0};
 
-	#pragma oss task			\
-			in( mat_c[0;n][0;n],	\
-			    mat_r[0;n][0;n])	\
-			firstprivate(n)
-	{
-		double e_sum = 0.0;
-
-		for (int i = 0; i < n; i++) {
-			for (int j = 0; j < n; j++) {
-				e_sum += (mat_c[i][j] < mat_r[i][j])
-					? mat_r[i][j] - mat_c[i][j]
-					: mat_c[i][j] - mat_r[i][j];
-			}
-		}
-
-		/* wrong results */
-		if (!(e_sum < 1E-6)) {
-			std::cerr << "MISMATCH" << std::endl;
-			exit(EXIT_FAILURE);
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+			e_sum += (mat_c[i][j] < mat_r[i][j])
+				? mat_r[i][j] - mat_c[i][j]
+				: mat_c[i][j] - mat_r[i][j];
 		}
 	}
-	#pragma oss taskwait
 
-	/* we have correct results */
-	std::cout << "OK" << std::endl;
+	if (e_sum < 1E-6) {
+		std::cout << "OK" << std::endl;
+	} else {
+		std::cerr << "MISMATCH" << std::endl;
+		exit(EXIT_FAILURE);
+	}
 }
 
-static void
+void
 run_matmul(const int& verify)
 {
         double time_start, time_stop;
 
         time_start = get_time();
         matmul_opt();
-	#pragma oss taskwait
         time_stop = get_time();
         
         std::cout.precision(4);
@@ -259,7 +243,6 @@ run_matmul(const int& verify)
 		
 		time_start = get_time();
 		matmul_ref();
-		#pragma oss taskwait
 		time_stop = get_time();
 
 		verify_results();
@@ -268,7 +251,7 @@ run_matmul(const int& verify)
 	}
 }
 
-static double
+double
 get_time()
 {
         struct timeval tv;
@@ -282,8 +265,8 @@ get_time()
         return tv.tv_sec + tv.tv_usec * 1E-6;
 }
 
-static void
-usage(const char *argv0)
+void
+usage(const char* argv0)
 {
 	std::cout << "Usage: " << argv0 << " [OPTION]...\n"
 		  << "\n"
@@ -295,12 +278,12 @@ usage(const char *argv0)
 		  << std::endl;
 }
 
-static void
+void
 info(const int& verify)
 {
 	const std::string sverif = (verify == 0) ? "OFF" : "ON";
 
-	std::cout << "MatMul: " << N << "x" << N
+	std::cout << "MatMul: "         << N << "x" << N
 		  << ", verification: " << sverif
 		  << std::endl;
 }
