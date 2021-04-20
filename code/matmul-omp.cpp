@@ -34,7 +34,8 @@ void info(const int&);
 void usage(const char*);
 void run_matmul(const int&);
 
-void init_i_section(
+void init_block(
+		const int&,
 		const int&,
 		const int&,
 		const int&,
@@ -126,16 +127,17 @@ main(int argc, char *argv[])
 }
 
 void
-init_i_section( const int &i,
-		const int &n,
-		const int &bsize,
-		double (*mat_a)[N],
-		double (*mat_b)[N],
-		double (*mat_c)[N],
-		double (*mat_r)[N])
+init_block( const int &i,
+	    const int &j,
+	    const int &n,
+	    const int &bsize,
+	    double (*mat_a)[N],
+	    double (*mat_b)[N],
+	    double (*mat_c)[N],
+	    double (*mat_r)[N])
 {
 	for (int ii = i; ii < i+bsize; ii++) {
-		for (int jj = 0; jj < n; jj++) {
+		for (int jj = j; jj < j+bsize; jj++) {
 			mat_c[ii][jj] = 0.0;
 			mat_r[ii][jj] = 0.0;
 			mat_a[ii][jj] = ((ii + jj) & 0x0F) * 0x1P-4;
@@ -149,7 +151,9 @@ init_matrices()
 {
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
-		init_i_section(i, N, BSIZE, mat_a, mat_b, mat_c, mat_r);
+		for (int j = 0; j < N; j += BSIZE) {
+			init_block(i, j, N, BSIZE, mat_a, mat_b, mat_c, mat_r);
+		}
 	}
 }
 
