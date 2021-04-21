@@ -14,13 +14,15 @@
 #include <sys/time.h>
 
 /* task granularity */
-int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
 #ifndef MATMUL_SIZE
 #define MATMUL_SIZE 512
 #endif
 #define N MATMUL_SIZE
+
+/* global variables */
+int BSIZE;
 
 /* working matrices */
 double (*mat_a)[N];
@@ -162,8 +164,6 @@ init_matrices()
 	 *        also be handled by the master or by any thread
 	 */
 
-	int n{N};
-
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			/**
@@ -205,8 +205,6 @@ multiply_block(const int &i,
 void
 matmul_opt()
 {
-	int n{N};
-
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			for (int k = 0; k < N; k += BSIZE) {

@@ -16,13 +16,16 @@
 #include "memory.hpp"
 
 /* task granularity */
-int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
 #ifndef MATMUL_SIZE
 #define MATMUL_SIZE 512
 #endif
 #define N MATMUL_SIZE
+
+/* global variables */
+int BSIZE;
+int NSIZE;
 
 /* working matrices */
 double (*mat_a)[N];
@@ -37,13 +40,37 @@ void info(const int&);
 void usage(const char*);
 void run_matmul(const int&);
 
+/**
+ * @note: directives are outlined,
+ *        and as such, all function
+ *        invocations become a task
+ * 
+ * @warning: the parameter names
+ *           need to be included
+ */
+#pragma oss task		\
+in(mat_c[0;NSIZE][0;NSIZE],	\
+   mat_r[0;NSIZE][0;NSIZE])
 void verify_results(
-		double (*)[N],
-		double (*)[N]);
+		double (*mat_c)[N],
+		double (*mat_r)[N]);
+/**
+ * @note: directives are outlined,
+ *        and as such, all function
+ *        invocations become a task
+ * 
+ * @warning: the parameter names
+ *           need to be included
+ */
+#pragma oss task		\
+in(   mat_a[0;NSIZE][0;NSIZE], 	\
+      mat_b[0;NSIZE][0;NSIZE]) 	\
+inout(mat_r[0;NSIZE][0;NSIZE])
 void matmul_ref(
-		double (*)[N],
-		double (*)[N],
-		double (*)[N]);
+		double (*mat_a)[N],
+		double (*mat_b)[N],
+		double (*mat_r)[N]);
+
 void init_block(
 		const int&,
 		const int&,
@@ -74,6 +101,8 @@ main(int argc, char *argv[])
 
 	/* block size unit */
 	BSIZE = BSIZE_UNIT;
+	/* matrix dimension */
+	NSIZE = N;
 
         while ((c = getopt(argc, argv, "b:vh")) != -1) {
                 switch (c) {
@@ -181,8 +210,6 @@ init_matrices()
 	 *           de sub-tasks
 	 */
 
-	int n{N};
-
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			/**
@@ -224,8 +251,6 @@ multiply_block(const int &i,
 void
 matmul_opt()
 {
-	int n{N};
-
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			for (int k = 0; k < N; k += BSIZE) {
@@ -302,7 +327,6 @@ verify_results(double (*mat_c)[N],
 void
 run_matmul(const int& verify)
 {
-	int n{N};
         double time_start, time_stop;
 
         time_start = get_time();
@@ -323,10 +347,6 @@ run_matmul(const int& verify)
 		 *        pendency list, as well as in
 		 *        the function's parameter list
 		 */
-		#pragma oss task			\
-				in(   mat_a[0;n][0;n], 	\
-				      mat_b[0;n][0;n]) 	\
-				inout(mat_r[0;n][0;n])
 		matmul_ref(mat_a, mat_b, mat_r);
 		/**
 		 * we need to wait for the tasks to fini-
@@ -351,9 +371,6 @@ run_matmul(const int& verify)
 		 *           test copy of the values mi-
 		 *           ght reside in remote nodes
 		 */
-		#pragma oss task			\
-				in(mat_c[0;n][0;n],	\
-				   mat_r[0;n][0;n])
 		verify_results(mat_c, mat_r);
 		/**
 		 * we need to wait for the tasks to fini-

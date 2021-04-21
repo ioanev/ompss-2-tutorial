@@ -14,13 +14,15 @@
 #include <sys/time.h>
 
 /* task granularity */
-int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
 #ifndef MATMUL_SIZE
 #define MATMUL_SIZE 512
 #endif
 #define N MATMUL_SIZE
+
+/* global variables */
+int BSIZE;
 
 /* working matrices */
 double (*mat_a)[N];
