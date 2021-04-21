@@ -19,6 +19,9 @@
 int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
+#ifndef MATMUL_SIZE
+#define MATMUL_SIZE 512
+#endif
 #define N MATMUL_SIZE
 
 /* working matrices */
@@ -69,7 +72,7 @@ main(int argc, char *argv[])
         extern char *optarg;
         extern int optind, optopt, opterr;
 
-	// block size unit
+	/* block size unit */
 	BSIZE = BSIZE_UNIT;
 
         while ((c = getopt(argc, argv, "b:vh")) != -1) {
@@ -113,6 +116,14 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
  
+ 	/**
+	 * allocate the matrices using the nanos6 allocator calls
+	 * and view the one-dimensional arrays as two-dimensional
+	 * for ease of access
+	 * 
+	 * @note: dmalloc() is just a wrapper for nanos6_dmalloc(),
+	 *        which is used to allocate distributed memory
+	 */
 	mat_a = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
 	mat_b = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
 	mat_c = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
@@ -121,6 +132,13 @@ main(int argc, char *argv[])
         init_matrices();
         run_matmul(verify);
 
+	/**
+	 * deallocate the allocated structures using the nanos6
+	 * allocator calls
+	 * 
+	 * @note: dfree() is just a wrapper for nanos6_dfree(),
+	 *        which is used to deallocate distributed memory
+	 */
 	dfree<double>(mat_a, N * N);
 	dfree<double>(mat_b, N * N);
 	dfree<double>(mat_c, N * N);
@@ -138,6 +156,9 @@ init_block(const int &i,
 	   double (*mat_c)[N],
 	   double (*mat_r)[N])
 {
+	/**
+	 * block-based initialization for cache-friendly accesses
+	 */
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
 			mat_c[ii][jj] = 0.0;
@@ -151,8 +172,23 @@ init_block(const int &i,
 void
 init_matrices()
 {
+	/**
+	 * @note: the initialization of the global matrices can
+	 *        also be handled by any thread
+	 * 
+	 * @warning: the distributed memory cannot be dereferenced
+	 *           directly after being allocated, but only insi-
+	 *           de sub-tasks
+	 */
+
+	int n{N};
+
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
+			/**
+			 * task-based initialization for a uniform cluster
+			 * node data distribution
+			 */
 			#pragma oss task				\
 					out(mat_a[i;BSIZE][j;BSIZE],	\
 					    mat_b[i;BSIZE][j;BSIZE],	\
@@ -173,6 +209,9 @@ multiply_block(const int &i,
 	       double (*mat_b)[N],
 	       double (*mat_c)[N])
 {
+		/**
+		 * block-based computation for cache-friendly accesses
+		 */
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {
 				for (int kk = k; kk < k+bsize; kk++) {
@@ -185,9 +224,14 @@ multiply_block(const int &i,
 void
 matmul_opt()
 {
+	int n{N};
+
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			for (int k = 0; k < N; k += BSIZE) {
+				/**
+				 * spawn a task for each block computation
+				 */
 				#pragma oss task				\
 						in(   mat_a[i;BSIZE][k;BSIZE],	\
 						      mat_b[k;BSIZE][j;BSIZE])	\
@@ -198,6 +242,11 @@ matmul_opt()
 		}
 	}
 
+	/**
+	 * we need to wait for the tasks to finish before deallocating
+	 * the global data structures (in the case of verification=OFF),
+	 * and for correct measurements
+	 */
 	#pragma oss taskwait
 }
 
@@ -206,6 +255,14 @@ matmul_ref(double (*mat_a)[N],
 	   double (*mat_b)[N],
 	   double (*mat_r)[N])
 {
+	/**
+	 * @note: the serial execution can be handled by any thread
+	 *        as in this case
+	 */
+
+	/**
+	 * serial execution of matrix multiplication for verification
+	 */
         for (int i = 0; i < N; i++) {
                 for (int j = 0; j < N; j++) {
                         for (int k = 0; k < N; k++) {
@@ -219,6 +276,11 @@ void
 verify_results(double (*mat_c)[N],
 	       double (*mat_r)[N])
 {
+	/**
+	 * @note: the verification can be handled by any thread
+	 *        as in this case
+	 */
+
 	double e_sum{0.0};
 
 	for (int i = 0; i < N; i++) {
@@ -255,18 +317,48 @@ run_matmul(const int& verify)
 		std::cout << "Verifying solution... ";
 		
 		time_start = get_time();
+		/**
+		 * @note: the distributed matrices need
+		 *        to be included both in the de-
+		 *        pendency list, as well as in
+		 *        the function's parameter list
+		 */
 		#pragma oss task			\
 				in(   mat_a[0;n][0;n], 	\
 				      mat_b[0;n][0;n]) 	\
 				inout(mat_r[0;n][0;n])
 		matmul_ref(mat_a, mat_b, mat_r);
+		/**
+		 * we need to wait for the tasks to fini-
+		 * sh for correct measurements
+		 */
 		#pragma oss taskwait
 		time_stop = get_time();
 
+		/**
+		 * @note: the distributed matrices need
+		 *        to be included both in the de-
+		 *        pendency list, as well as in
+		 *        the function's parameter list
+		 * 
+		 * @warning: the compiler and runtime
+		 *           might be silent when dire-
+		 *           ctly derefercing distribu-
+		 *           ted memory for reading
+		 *           However, in case this ha-
+		 *           ppens, outdated values mi-
+		 *           ght be observed, as the la-
+		 *           test copy of the values mi-
+		 *           ght reside in remote nodes
+		 */
 		#pragma oss task			\
 				in(mat_c[0;n][0;n],	\
 				   mat_r[0;n][0;n])
 		verify_results(mat_c, mat_r);
+		/**
+		 * we need to wait for the tasks to fini-
+		 * sh before deallocating the global data
+		 */
 		#pragma oss taskwait
 		std::cout << "Reference runtime: " << time_stop - time_start
 			  << std::endl;

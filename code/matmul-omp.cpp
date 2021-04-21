@@ -17,6 +17,9 @@
 int BSIZE;
 #define BSIZE_UNIT 64
 /* size of matrices */
+#ifndef MATMUL_SIZE
+#define MATMUL_SIZE 512
+#endif
 #define N MATMUL_SIZE
 
 /* working matrices */
@@ -62,7 +65,7 @@ main(int argc, char *argv[])
         extern char *optarg;
         extern int optind, optopt, opterr;
 
-	// block size unit
+	/* block size unit */
 	BSIZE = BSIZE_UNIT;
 
         while ((c = getopt(argc, argv, "b:vh")) != -1) {
@@ -106,6 +109,10 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
  
+	/**
+	 * allocate the matrices using C++ new[] and view the one-
+	 * dimensional arrays as two-dimensional for ease of access
+	 */
 	mat_a = reinterpret_cast<double(*)[N]>(new double[N * N]);
 	mat_b = reinterpret_cast<double(*)[N]>(new double[N * N]);
 	mat_c = reinterpret_cast<double(*)[N]>(new double[N * N]);
@@ -117,6 +124,9 @@ main(int argc, char *argv[])
 		run_matmul(verify);
 	}
 
+	/**
+	 * deallocate the allocated structures using C++ delete[]
+	 */
 	delete[] mat_a;
 	delete[] mat_b;
 	delete[] mat_c;
@@ -134,6 +144,9 @@ init_block(const int &i,
 	   double (*mat_c)[N],
 	   double (*mat_r)[N])
 {
+	/**
+	 * block-based initialization for cache-friendly accesses
+	 */
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
 			mat_c[ii][jj] = 0.0;
@@ -147,6 +160,14 @@ init_block(const int &i,
 void
 init_matrices()
 {
+	/**
+	 * @note: the initialization of the global matrices can
+	 *        also be handled by the master or by any thread
+	 */
+
+	/**
+	 * parallelize initialization for a uniform NUMA node data distribution
+	 */
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
@@ -164,6 +185,9 @@ multiply_block(const int &i,
 	       double (*mat_b)[N],
 	       double (*mat_c)[N])
 {
+		/**
+		 * block-based computation for cache-friendly accesses
+		 */
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {
 				for (int kk = k; kk < k+bsize; kk++) {
@@ -176,6 +200,9 @@ multiply_block(const int &i,
 void
 matmul_opt()
 {
+	/**
+	 * parallel block-based computation
+	 */
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
@@ -189,6 +216,14 @@ matmul_opt()
 void
 matmul_ref()
 {
+	/**
+	 * @note: the serial execution can be handled by the master or
+	 *        by any thread as in this case
+	 */
+
+	/**
+	 * serial execution of matrix multiplication for verification
+	 */
         for (int i = 0; i < N; i++) {
                 for (int j = 0; j < N; j++) {
                         for (int k = 0; k < N; k++) {
@@ -201,6 +236,11 @@ matmul_ref()
 void
 verify_results()
 {
+	/**
+	 * @note: the verification can be handled by the master or
+	 *        by any thread as in this case
+	 */
+
 	double e_sum{0.0};
 
 	for (int i = 0; i < N; i++) {
