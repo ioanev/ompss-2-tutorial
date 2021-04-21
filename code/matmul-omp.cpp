@@ -38,7 +38,6 @@ void init_block(
 		const int&,
 		const int&,
 		const int&,
-		const int&,
 		double (*)[N],
 		double (*)[N],
 		double (*)[N],
@@ -127,14 +126,13 @@ main(int argc, char *argv[])
 }
 
 void
-init_block( const int &i,
-	    const int &j,
-	    const int &n,
-	    const int &bsize,
-	    double (*mat_a)[N],
-	    double (*mat_b)[N],
-	    double (*mat_c)[N],
-	    double (*mat_r)[N])
+init_block(const int &i,
+	   const int &j,
+	   const int &bsize,
+	   double (*mat_a)[N],
+	   double (*mat_b)[N],
+	   double (*mat_c)[N],
+	   double (*mat_r)[N])
 {
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
@@ -152,19 +150,19 @@ init_matrices()
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
-			init_block(i, j, N, BSIZE, mat_a, mat_b, mat_c, mat_r);
+			init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
 		}
 	}
 }
 
 void
-multiply_block( const int &i,
-		const int &j,
-		const int &k,
-		const int &bsize,
-		double (*mat_a)[N],
-		double (*mat_b)[N],
-		double (*mat_c)[N])
+multiply_block(const int &i,
+	       const int &j,
+	       const int &k,
+	       const int &bsize,
+	       double (*mat_a)[N],
+	       double (*mat_b)[N],
+	       double (*mat_c)[N])
 {
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {

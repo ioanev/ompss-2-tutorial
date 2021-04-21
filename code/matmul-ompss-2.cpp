@@ -123,13 +123,13 @@ main(int argc, char *argv[])
 }
 
 void
-init_block( const int &i,
-	    const int &j,
-	    const int &bsize,
-	    double (*mat_a)[N],
-	    double (*mat_b)[N],
-	    double (*mat_c)[N],
-	    double (*mat_r)[N])
+init_block(const int &i,
+	   const int &j,
+	   const int &bsize,
+	   double (*mat_a)[N],
+	   double (*mat_b)[N],
+	   double (*mat_c)[N],
+	   double (*mat_r)[N])
 {
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
@@ -144,8 +144,6 @@ init_block( const int &i,
 void
 init_matrices()
 {
-	int n{N};
-
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			#pragma oss task				\
@@ -160,13 +158,13 @@ init_matrices()
 }
 
 void
-multiply_block( const int &i,
-		const int &j,
-		const int &k,
-		const int &bsize,
-		double (*mat_a)[N],
-		double (*mat_b)[N],
-		double (*mat_c)[N])
+multiply_block(const int &i,
+	       const int &j,
+	       const int &k,
+	       const int &bsize,
+	       double (*mat_a)[N],
+	       double (*mat_b)[N],
+	       double (*mat_c)[N])
 {
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {

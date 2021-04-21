@@ -28,14 +28,19 @@ double (*mat_c)[N];
 double (*mat_r)[N];
 
 void matmul_opt();
-void matmul_ref();
 void init_matrices();
-void verify_results();
 
 void info(const int&);
 void usage(const char*);
 void run_matmul(const int&);
 
+void verify_results(
+		double (*)[N],
+		double (*)[N]);
+void matmul_ref(
+		double (*)[N],
+		double (*)[N],
+		double (*)[N]);
 void init_block(
 		const int&,
 		const int&,
@@ -125,13 +130,13 @@ main(int argc, char *argv[])
 }
 
 void
-init_block( const int &i,
-	    const int &j,
-	    const int &bsize,
-	    double (*mat_a)[N],
-	    double (*mat_b)[N],
-	    double (*mat_c)[N],
-	    double (*mat_r)[N])
+init_block(const int &i,
+	   const int &j,
+	   const int &bsize,
+	   double (*mat_a)[N],
+	   double (*mat_b)[N],
+	   double (*mat_c)[N],
+	   double (*mat_r)[N])
 {
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
@@ -146,8 +151,6 @@ init_block( const int &i,
 void
 init_matrices()
 {
-	int n{N};
-
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			#pragma oss task				\
@@ -162,13 +165,13 @@ init_matrices()
 }
 
 void
-multiply_block( const int &i,
-		const int &j,
-		const int &k,
-		const int &bsize,
-		double (*mat_a)[N],
-		double (*mat_b)[N],
-		double (*mat_c)[N])
+multiply_block(const int &i,
+	       const int &j,
+	       const int &k,
+	       const int &bsize,
+	       double (*mat_a)[N],
+	       double (*mat_b)[N],
+	       double (*mat_c)[N])
 {
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {
@@ -199,60 +202,45 @@ matmul_opt()
 }
 
 void
-matmul_ref()
+matmul_ref(double (*mat_a)[N],
+	   double (*mat_b)[N],
+	   double (*mat_r)[N])
 {
-	int n{N};
-
-	#pragma oss task			\
-			in( mat_a[0;n][0;n],	\
-			    mat_b[0;n][0;n])	\
-			out(mat_r[0;n][0;n])	\
-			firstprivate(n)
-        for (int i = 0; i < n; i++) {
-                for (int j = 0; j < n; j++) {
-                        for (int k = 0; k < n; k++) {
+        for (int i = 0; i < N; i++) {
+                for (int j = 0; j < N; j++) {
+                        for (int k = 0; k < N; k++) {
                         	mat_r[i][j] += mat_a[i][k] * mat_b[k][j];
                         }
                 }
         }
-
-	#pragma oss taskwait
 }
 
 void
-verify_results()
+verify_results(double (*mat_c)[N],
+	       double (*mat_r)[N])
 {
-	int n{N};
+	double e_sum{0.0};
 
-	#pragma oss task			\
-			in( mat_c[0;n][0;n],	\
-			    mat_r[0;n][0;n])	\
-			firstprivate(n)
-	{
-		double e_sum = 0.0;
-
-		for (int i = 0; i < n; i++) {
-			for (int j = 0; j < n; j++) {
-				e_sum += (mat_c[i][j] < mat_r[i][j])
-					? mat_r[i][j] - mat_c[i][j]
-					: mat_c[i][j] - mat_r[i][j];
-			}
-		}
-
-		if (e_sum < 1E-6) {
-			std::cout << "OK" << std::endl;
-		} else {
-			std::cerr << "MISMATCH" << std::endl;
-			exit(EXIT_FAILURE);
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+			e_sum += (mat_c[i][j] < mat_r[i][j])
+				? mat_r[i][j] - mat_c[i][j]
+				: mat_c[i][j] - mat_r[i][j];
 		}
 	}
-	
-	#pragma oss taskwait
+
+	if (e_sum < 1E-6) {
+		std::cout << "OK" << std::endl;
+	} else {
+		std::cerr << "MISMATCH" << std::endl;
+		exit(EXIT_FAILURE);
+	}
 }
 
 void
 run_matmul(const int& verify)
 {
+	int n{N};
         double time_start, time_stop;
 
         time_start = get_time();
@@ -267,10 +255,19 @@ run_matmul(const int& verify)
 		std::cout << "Verifying solution... ";
 		
 		time_start = get_time();
-		matmul_ref();
+		#pragma oss task			\
+				in(   mat_a[0;n][0;n], 	\
+				      mat_b[0;n][0;n]) 	\
+				inout(mat_r[0;n][0;n])
+		matmul_ref(mat_a, mat_b, mat_r);
+		#pragma oss taskwait
 		time_stop = get_time();
 
-		verify_results();
+		#pragma oss task			\
+				in(mat_c[0;n][0;n],	\
+				   mat_r[0;n][0;n])
+		verify_results(mat_c, mat_r);
+		#pragma oss taskwait
 		std::cout << "Reference runtime: " << time_stop - time_start
 			  << std::endl;
 	}
