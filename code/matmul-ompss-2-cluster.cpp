@@ -162,8 +162,7 @@ main(int argc, char *argv[])
         run_matmul(verify);
 
 	/**
-	 * deallocate the allocated structures using the nanos6
-	 * allocator calls
+	 * deallocate the matrices using the nanos6 allocator calls
 	 * 
 	 * @note: dfree() is just a wrapper for nanos6_dfree(),
 	 *        which is used to deallocate distributed memory

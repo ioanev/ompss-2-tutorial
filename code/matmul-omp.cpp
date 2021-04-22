@@ -112,13 +112,12 @@ main(int argc, char *argv[])
 	}
  
 	/**
-	 * allocate the matrices using C++ new[] and view the one-
-	 * dimensional arrays as two-dimensional for ease of access
+	 * allocate the matrices using C++ new[]
 	 */
-	mat_a = reinterpret_cast<double(*)[N]>(new double[N * N]);
-	mat_b = reinterpret_cast<double(*)[N]>(new double[N * N]);
-	mat_c = reinterpret_cast<double(*)[N]>(new double[N * N]);
-	mat_r = reinterpret_cast<double(*)[N]>(new double[N * N]);
+	mat_a = new double[N][N];
+	mat_b = new double[N][N];
+	mat_c = new double[N][N];
+	mat_r = new double[N][N];
 
 	#pragma omp parallel
 	{
@@ -127,7 +126,7 @@ main(int argc, char *argv[])
 	}
 
 	/**
-	 * deallocate the allocated structures using C++ delete[]
+	 * deallocate the matrices using C++ delete[]
 	 */
 	delete[] mat_a;
 	delete[] mat_b;
