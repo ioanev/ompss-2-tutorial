@@ -79,14 +79,27 @@ void init_block(
 		double (*)[N],
 		double (*)[N],
 		double (*)[N]);
+
+/**
+ * @note: directives are outlined,
+ *        and as such, all function
+ *        invocations become a task
+ * 
+ * @warning: the parameter names
+ *           need to be included
+ */
+#pragma oss task		\
+in(   mat_a[i;bsize][k;bsize],	\
+      mat_b[k;bsize][j;bsize])	\
+inout(mat_c[i;bsize][j;bsize])
 void multiply_block(
-		const int&,
-		const int&,
-		const int&,
-		const int&,
-		double (*)[N],
-		double (*)[N],
-		double (*)[N]);
+		const int i,
+		const int j,
+		const int k,
+		const int bsize,
+		double (*mat_a)[N],
+		double (*mat_b)[N],
+		double (*mat_c)[N]);
 
 double get_time();
 
@@ -227,10 +240,10 @@ init_matrices()
 }
 
 void
-multiply_block(const int &i,
-	       const int &j,
-	       const int &k,
-	       const int &bsize,
+multiply_block(const int i,
+	       const int j,
+	       const int k,
+	       const int bsize,
 	       double (*mat_a)[N],
 	       double (*mat_b)[N],
 	       double (*mat_c)[N])
@@ -256,11 +269,6 @@ matmul_opt()
 				/**
 				 * spawn a task for each block computation
 				 */
-				#pragma oss task				\
-						in(   mat_a[i;BSIZE][k;BSIZE],	\
-						      mat_b[k;BSIZE][j;BSIZE])	\
-						inout(mat_c[i;BSIZE][j;BSIZE])	\
-						firstprivate(i, j, k, BSIZE)
 				multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
 			}
 		}
