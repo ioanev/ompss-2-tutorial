@@ -60,18 +60,18 @@ After allocation, the arrays are being initialized collectively using the OpenMP
 void
 init_matrices()
 {
-	/**
-	 * @note: The initialization of the global matrices can
-	 *        also be handled by the master or by any thread
-	 */
+  /**
+   * @note: The initialization of the global matrices can
+   *        also be handled by the master or by any thread
+   */
 
-	/* Parallelize for better NUMA node data distribution */
-	#pragma omp for
-	for (int i = 0; i < N; i += BSIZE)
-		for (int j = 0; j < N; j += BSIZE)
-			/* Init. a block for cache-friendly accesses  */
-			init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
-	/* _implicit barrier_ */
+  /* Parallelize for better NUMA node data distribution */
+  #pragma omp for
+    for (int i = 0; i < N; i += BSIZE)
+      for (int j = 0; j < N; j += BSIZE)
+        /* Init. a block for cache-friendly accesses    */
+        init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
+  /* _implicit barrier_ */
 }
 ```
 
@@ -87,14 +87,14 @@ The multiplication is being done similar to the initialization, exploiting coars
 void
 matmul_opt()
 {
-	/* Parallel block-based computation */
-	#pragma omp for
-	for (int i = 0; i < N; i += BSIZE)
-		for (int j = 0; j < N; j += BSIZE)
-			for (int k = 0; k < N; k += BSIZE)
-				/* Compute an individual block */
-				multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
-	/* _implicit barrier_ */
+  /* Parallel block-based computation */
+  #pragma omp for
+  for (int i = 0; i < N; i += BSIZE)
+    for (int j = 0; j < N; j += BSIZE)
+      for (int k = 0; k < N; k += BSIZE)
+        /* Compute an individual block */
+        multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
+  /* _implicit barrier_ */
 }
 ```
 
@@ -114,7 +114,7 @@ The validity of the results is being checked by serially executing the kernel (n
 
 /* Serial execution of matrix multiplication for verification      */
 #pragma omp single
-	matmul_ref();
+  matmul_ref();
 /* _implicit barrier_ */
 
 /**
@@ -124,7 +124,7 @@ The validity of the results is being checked by serially executing the kernel (n
 
 /* Verify the results by finding the error between mat_c and mat_r */
 #pragma omp single
-	verify_results();
+  verify_results();
 /* _implicit barrier_ */
 ```
 
@@ -147,15 +147,7 @@ Since operation is still being done on the shared memory level, there is no diff
 
 OmpSs being a task-based runtime system, the way we distribute work differs from the OpenMP method of parallelization used in the current example. In this example, we choose to associate a task to each tile to be computed. That said, the main thread iterates over the loops and keeps spawning tasks, which then reside on the task pool, ready to be served by a team of threads. Which thread computes which tile is chosen by the runtime.
 
-</div>
-
-<div align="justify">
-
 The tasks need to also include directionality annotations based on the type of accesses being done to the data structures operated in the task body. As the matrices are only written during initialization, we enclose them in the `out` clause. Aside from expressing data direction, we need to specify which section of data is going to be operated by each task, in order to build proper dependencies between tasks, and thus effectively avoid data races.
-
-</div>
-
-<div align="justify">
 
 In OmpSs, directives can be _inlined_ or _outlined_. When inlined, the `pragma` applies immediatly to the following statement, and the compiler outlines that statement as in OpenMP. The code block below presents an example of inlined directives.
 
@@ -165,22 +157,22 @@ In OmpSs, directives can be _inlined_ or _outlined_. When inlined, the `pragma` 
 void
 init_matrices()
 {
-	/**
-	 * @note: The initialization of the global matrices can
-	 *        also be handled by the master or by any thread
-	 */
+  /**
+   * @note: The initialization of the global matrices can
+   *        also be handled by the master or by any thread
+   */
 
-	/* Parallelize for better NUMA node data distribution */
-	for (int i = 0; i < N; i += BSIZE)
-		for (int j = 0; j < N; j += BSIZE)
-			/* Spawn a task for each individual block     */
-			#pragma oss task	             		\
-					out(mat_a[i;BSIZE][j;BSIZE],	\
-					    mat_b[i;BSIZE][j;BSIZE],	\
-					    mat_c[i;BSIZE][j;BSIZE],	\
-					    mat_r[i;BSIZE][j;BSIZE])	\
-					firstprivate(i, j, BSIZE)
-			init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
+  /* Parallelize for better NUMA node data distribution */
+  for (int i = 0; i < N; i += BSIZE)
+    for (int j = 0; j < N; j += BSIZE)
+      /* Spawn a task for each individual block         */
+      #pragma oss task                 \
+          out(mat_a[i;BSIZE][j;BSIZE], \
+              mat_b[i;BSIZE][j;BSIZE], \
+              mat_c[i;BSIZE][j;BSIZE], \
+              mat_r[i;BSIZE][j;BSIZE]) \
+          firstprivate(i, j, BSIZE)
+      init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
 }
 ```
 
@@ -201,27 +193,23 @@ The execution of the matrix multiplication kernel is similar to the initializati
 
 ```cpp
 /**
- * @note   : Directives are outlined, and as such,
- *           all function invocations become a task
+ * @note: Directives are outlined, and as such,
+ *        all function invocations become a task
  * @warning: The parameter names need to be included
  */
-#pragma oss task            	\
-in(   mat_a[i;bsize][k;bsize],	\
-      mat_b[k;bsize][j;bsize])	\
+#pragma oss task               \
+in(   mat_a[i;bsize][k;bsize], \
+      mat_b[k;bsize][j;bsize]) \
 inout(mat_c[i;bsize][j;bsize])
 void
 multiply_block(
-		const int i, const int j, const int k, const int bsize,
-		double (*mat_a)[N], double (*mat_b)[N], double (*mat_c)[N]);
+    const int i, const int j, const int k, const int bsize,
+    double (*mat_a)[N], double (*mat_b)[N], double (*mat_c)[N]);
 ```
 
 <div align="justify">
 
 Another difference, is that the `pragma` directive now includes two different dependency clauses, namely `in`, and `inout`. The former, encloses the two input matrices as they are only read during computation, while the latter, encloses the output matrix, of which parts are accumulated with the execution of each task. These two, in conjuction with the `out` dependency clause, make up for all the basic strong dependency clauses.
-
-</div>
-
-<div align="justify">
 
 As there is no implicit mechanism in the OmpSs programming model for imposing a "barrier" whenever necessary, the `taskwait` construct needs to be explicitly issued. This construct, blocks the current control flow of the program, until the completion of all the direct descendant tasks. Notice that a `taskwait` is not included between the initialization and computation, due to the implicit synchronization imposed from the task dependencies.
 
@@ -231,19 +219,19 @@ As there is no implicit mechanism in the OmpSs programming model for imposing a 
 void
 matmul_opt()
 {
-	/* Parallel block-based computation */
-	for (int i = 0; i < N; i += BSIZE)
-		for (int j = 0; j < N; j += BSIZE)
-			for (int k = 0; k < N; k += BSIZE)
-				/* Spawn a task for each individual block */
-				multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
+  /* Parallel block-based computation */
+  for (int i = 0; i < N; i += BSIZE)
+    for (int j = 0; j < N; j += BSIZE)
+      for (int k = 0; k < N; k += BSIZE)
+        /* Spawn a task for each individual block */
+        multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
 
-	/*
-	 * We need to wait for the tasks to finish before deallocating
-	 * the global data structures (in the case of verification=OFF),
-	 * and for correct measurements
-	 */
-	#pragma oss taskwait
+  /*
+   * We need to wait for the tasks to finish before deallocating
+   * the global data structures (in the case of verification=OFF),
+   * and for correct measurements
+   */
+  #pragma oss taskwait
 }
 ```
 
@@ -254,3 +242,163 @@ matmul_opt()
 The verification of the results is left to be taken care of by the main thread, as we are guaranteed to see the updated values of the memory being worked on during the computation, by directly dereferencing. Of course, verification can also be handled within tasks.
 
 </div>
+
+### **OmpSs-2@Cluster implementation**
+-----------------------------
+
+The full source code of the implementation can be found [here](https://github.com/IoanAnev/ompss-tutorial/blob/master/code/matmul-ompss-2-cluster.cpp).
+
+#### **Allocation & Deallocation**
+
+<div align="justify">
+
+OmpSs@Cluster is an extension of the OmpSs programming model to handle disjoint address spaces. As such, the memory model introduces the notion of two distinct memory types in which distributed computations can take place, _local_, and _distributed_ memory.
+
+Local memory is cluster-capable memory, as it can participate in distributed computations, and is allocated on a single node. This type of memory can be directly dereferenced within the context of the task that allocated it. Users can allocate and deallocate local memory through the `nanos6_lmalloc` and `nanos6_lfree` API calls, respectively. As seen below, we introduce the corresponding wrappers for these functions, `lmalloc` and `lfree`, mainly for programming convencience.
+
+</div>
+
+```cpp
+/**
+ * @brief: Wrapper for the nanos6_lmalloc call
+ *
+ * @param[in] size: Number of type T elements to allocate
+ * @returns       : A pointer to the local memory allocated
+ */
+template<typename T>
+static inline T* lmalloc(size_t size)
+{
+  T* alloc = (T*)nanos6_lmalloc(sizeof(T) * size);
+  return alloc;
+}
+
+/**
+ * @brief: Wrapper for the nanos6_lfree call
+ *
+ * @param[in] ptr : Pointer to the locally allocated memory
+ * @param[in] size: Size of the locally allocated memory
+ */
+template<typename T>
+static inline void lfree(void* ptr, size_t size)
+{
+  nanos6_lfree(ptr, sizeof(T) * size);
+}
+```
+
+<div align="justify">
+
+Distributed memory is cluster-capable memory that is allocated collectively by all the nodes that participate in the execution. This type of memory can be dereferenced only within the sub-tasks of the task that allocated it. Users can allocate and deallocate distributed memory through the `nanos6_dmalloc` and `nanos6_lfree` API calls, respectively. When allocating distributed memory, the user application can define a _distribution policy_, to give hints to the runtime about the data placement of the allocated data across nodes. As there is one distribution currently available, it is passed as a default value to the relevant parameter in the `dmalloc` wrapper. Similarly, we pass magic values to the remaining parameters, due to their missing underlying functionality.
+
+</div>
+
+```cpp
+/**
+ * @brief: Wrapper for the nanos6_dmalloc call
+ *
+ * @param[in] size          : Number of type T elements to allocate
+ * @param[in] policy        : Data distribution policy
+ * @param[in] num_dimensions: Number of dimensions
+ * @param[in] dimensions    : Array containing the size of
+ *                            every distribution dimension
+ */
+template<typename T>
+static inline T* dmalloc(size_t size,
+    nanos6_data_distribution_t policy = nanos6_equpart_distribution,
+    size_t num_dimensions = 0,
+    size_t *dimensions = NULL)
+{
+  T* alloc = (T*)nanos6_dmalloc(sizeof(T) * size,
+                                policy, num_dimensions, dimensions);
+  return alloc;
+}
+
+/**
+ * @brief: Wrapper for the nanos6_dfree call
+ *
+ * @param[in] ptr : Pointer to the distributed allocated memory
+ * @param[in] size: Size of the distributed allocated memory
+ */
+template<typename T>
+static inline void dfree(void* ptr, size_t size)
+{
+  nanos6_dfree(ptr, sizeof(T) * size);
+}
+```
+
+<div align="justify">
+
+We allocate the program matrices on distributed memory, since they are operated collectively, but also to take advantage of the extented memory capabilities of the cluster machine. Notice that we cast the single pointers returned from the `dmalloc` calls to view the arrays as two-dimensional, thing which helps us ease the specification of the data dependencies in the `pragma` directives, as well as accessing the structures.
+
+</div>
+
+```cpp
+/**
+ * Allocate the matrices using the nanos6 allocator calls
+ * and view the one-dimensional arrays as two-dimensional
+ * for ease of dependency specification and ease of access
+ * 
+ * @note: dmalloc is just a wrapper for nanos6_dmalloc,
+ *        which is used to allocate distributed memory
+ */
+mat_a = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
+mat_b = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
+mat_c = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
+mat_r = reinterpret_cast<double(*)[N]>(dmalloc<double>(N * N));
+
+/**
+ * Deallocate the matrices using the nanos6 allocator calls
+ * 
+ * @note: dfree is just a wrapper for nanos6_dfree,
+ *        which is used to deallocate distributed memory
+ */
+dfree<double>(mat_a, N * N);
+dfree<double>(mat_b, N * N);
+dfree<double>(mat_c, N * N);
+dfree<double>(mat_r, N * N);
+```
+
+#### **Initialization & Computation**
+
+<div align="justify">
+
+One of the characteristics of the cluster version of OmpSs, aside from its memory model, is its more strict data-flow semantics over traditional OmpSs. Having said that, it requires the programmer to specify exactly all the memory accesses that happen inside a task in its dependency list, without allowing the use of defining only a subset of the them. If the program is not annotated correctly, proper ordering will not be enforced between tasks and wrong results will most probably be observed.
+
+From the above statements, it can be deduced that any OmpSs@Cluster program is a correct shared memory OmpSs program as well, but not vice versa. As far as the current application is concerned, the initialization and computation sections are compatible between the traditional and the cluster version of OmpSs, as the relevant code blocks were initially profoundly annotated.
+
+</div>
+
+#### **Verification**
+
+<div align="justify">
+
+Due to the restrictions for accessing distributed memory, the functions related to verification need to be taskified, in order to avoid runtime access errors and reading outdated values. Of course, after this modification, `taskwait` clauses need to be included after the invocation of these functions, for correct performance measurements and early program termination avoidance.
+
+</div>
+
+```cpp
+/**
+ * @note: Directives are outlined, and as such,
+ *        all function invocations become a task
+ * @warning: The parameter names need to be included
+ */
+#pragma oss task               \
+in(mat_c[0;NSIZE][0;NSIZE],    \
+   mat_r[0;NSIZE][0;NSIZE])
+void verify_results(
+    double (*mat_c)[N],
+    double (*mat_r)[N]);
+
+/**
+ * @note: Directives are outlined, and as such,
+ *        all function invocations become a task
+ * @warning: The parameter names need to be included
+ */
+#pragma oss task               \
+in(   mat_a[0;NSIZE][0;NSIZE], \
+      mat_b[0;NSIZE][0;NSIZE]) \
+inout(mat_r[0;NSIZE][0;NSIZE])
+void matmul_ref(
+    double (*mat_a)[N],
+    double (*mat_b)[N],
+    double (*mat_r)[N]);
+```
