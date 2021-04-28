@@ -6,7 +6,7 @@ This is a small tutorial on how to convert OpenMP applications to run on the Omp
 
 ## The Simple Example
 
-The example concerns a naive matrix multiplication implementation, which is a kernel operation that calculates the dot product of two matrices. It is meant as an introduction to OmpSs-2 and OmpSs-2@Cluster and its differences with non-task-based and non-distributed applications. It is written in C++.
+The example concerns a naive matrix multiplication implementation, which is a kernel operation that calculates the product of two matrices. It is meant as an introduction to OmpSs-2 and OmpSs-2@Cluster and its differences with non-task-based and non-distributed applications. It is written in C++.
 
 ### OpenMP implementation
 
@@ -119,7 +119,7 @@ Since operation is still being done on the shared memory level, there is no diff
 
 #### Initialization
 
-OmpSs being a task-based runtime system, the way we distribute work differs from the OpenMP method of parallelization used in the current example. In this example, we choose to associate a task to each tile to be computed. That said, the main thread iterates over the loops and keeps spawning tasks, which then reside on the task pool, ready to be served by a team of threads. Which thread computes which tile is chosen by the runtime.
+OmpSs being a task-based runtime system, the way we distribute work differs from the OpenMP method of parallelization used in the current example. In this example, we choose to associate a task to each tile to be computed. That said, the main thread iterates over the loops and keeps spawning tasks, which then reside in the task pool, ready to be served by a team of threads. Which thread computes which tile is chosen by the runtime.
 
 The tasks need to also include directionality annotations based on the type of accesses being done to the data structures operated in the task body. As the matrices are only written during initialization, we enclose them in the `out` clause. Aside from expressing data direction, we need to specify which section of data is going to be operated by each task, in order to build proper dependencies between tasks, and thus effectively avoid data races.
 
@@ -216,7 +216,7 @@ The full source code of the implementation can be found [here](https://github.co
 
 #### Allocation & Deallocation
 
-OmpSs@Cluster is an extension of the OmpSs programming model to handle disjoint address spaces. As such, the memory model introduces the notion of two distinct memory types in which distributed computations can take place, _local_, and _distributed_ memory.
+OmpSs-2@Cluster is an extension of the OmpSs-2 programming model to handle disjoint address spaces. As such, the memory model introduces the notion of two distinct memory types in which distributed computations can take place, _local_, and _distributed_ memory.
 
 Local memory is cluster-capable memory, as it can participate in distributed computations, and is allocated on a single node. This type of memory can be directly dereferenced within the context of the task that allocated it. Users can allocate and deallocate local memory through the `nanos6_lmalloc` and `nanos6_lfree` API calls, respectively. As seen below, we introduce the corresponding wrappers for these functions, `lmalloc` and `lfree`, mainly for programming convencience.
 
@@ -283,7 +283,7 @@ static inline void dfree(void* ptr, size_t size)
 }
 ```
 
-We allocate the program matrices on distributed memory, since they are operated collectively, but also to take advantage of the extented memory capabilities of the cluster machine. Notice that we cast the single pointers returned from the `dmalloc` calls to view the arrays as two-dimensional, thing which helps us ease the specification of the data dependencies in the `pragma` directives, as well as accessing the structures.
+We allocate the program matrices on distributed memory, since they are operated collectively, but also to take advantage of the extented memory capabilities of the cluster machine. Notice that we cast the single-dimensional pointers returned from the `dmalloc` calls to view the arrays as two-dimensional, a thing which helps us ease the specification of the data dependencies in the `pragma` directives, as well as accessing the structures.
 
 ```cpp
 /**
@@ -313,9 +313,9 @@ dfree<double>(mat_r, N * N);
 
 #### Initialization & Computation
 
-One of the characteristics of the cluster version of OmpSs, aside from its memory model, is its more strict data-flow semantics over traditional OmpSs. Having said that, it requires the programmer to specify exactly all the memory accesses that happen inside a task in its dependency list, without allowing the use of defining only a subset of the them. If the program is not annotated correctly, proper ordering will not be enforced between tasks and wrong results will most probably be observed.
+One of the characteristics of the cluster version of OmpSs, aside from its memory model, is its more strict data-flow semantics over traditional OmpSs. Having said that, it requires the programmer to specify all the memory accesses that happen inside a task in its dependency list, without allowing the use of defining only a subset of the them. If the program is not annotated correctly, proper ordering will not be enforced between tasks and incorrect results will likely be observed.
 
-From the above statements, it can be deduced that any OmpSs@Cluster program is a correct shared memory OmpSs program as well, but not vice versa. As far as the current application is concerned, the initialization and computation sections are compatible between the traditional and the cluster version of OmpSs, as the relevant code blocks were initially profoundly annotated.
+From the above statements, it can be deduced that any OmpSs-2@Cluster program is a correct shared memory OmpSs-2 program as well, but not vice versa. As far as the current application is concerned, the initialization and computation sections are compatible between the traditional and the cluster version of OmpSs-2, as the relevant code blocks were initially profoundly annotated.
 
 #### Verification
 
@@ -415,7 +415,7 @@ The configuration file offers users the ability to experiment with a variety of 
 
 #### Cluster options
 
-There are certain variables that need to be modified in order to be able to run the application on the cluster level. First and foremost, is the _dependency implementation_. The dependency implementation can be selected through `version.dependencies` and its default value is `discrete`. This value needs to be set to `regions`, as this is the only implementation that supports OmpSs@Cluster.
+There are certain variables that need to be modified in order to be able to run the application on the cluster level. First and foremost, is the _dependency implementation_. The dependency implementation can be selected through `version.dependencies` and its default value is `discrete`. This value needs to be set to `regions`, as this is the only implementation that supports OmpSs-2@Cluster.
 
 ```sh
 [version]
@@ -433,7 +433,7 @@ The second variable that needs to be set, is just as critical as the former, and
     communication = "argodsm"
 ```
 
-Once the above variables have been set, the program is able to be run on the cluster setting. That is of course, if the default memory values present in the configuration file answer for the memory demand of the application. If the memory deems to not be sufficient, the values `distributed_memory` and `local_memory` under the `cluster` section might need to be modified.
+Once the above variables have been set, the program is able to be run on the cluster setting. That is of course, if the default memory values present in the configuration file is enough for the memory demand of the application. If the default memory allocation is not sufficient, the values `distributed_memory` and `local_memory` under the `cluster` section can be modified.
 
 ```sh
 [cluster]
@@ -446,7 +446,7 @@ Once the above variables have been set, the program is able to be run on the clu
 > **NOTE:**
 > In spite of the fact that the `local_memory` variable is under the `cluster` tab, there might need for it to be increased when running shared memory applications as well, as it defines the memory budget reserved by the system for instantiating tasks.
 
-While at the `cluster` tab, an option worthy of note when developing applications on the cluster version of OmpSs is the `scheduling_policy`. This option accepts two values, `locality`, and `random`, and controls whether the tasks spawned will be offloaded to the nodes based on their locality of data, or completely random, respectively. When developing distributed applications with OmpSs, it is wise to test with the `random` scheduling option, as `locality` might hide bugs due to restricting the computation in certain compute nodes.
+While at the `cluster` tab, an option worthy of note when developing applications for OmpSs-2@Cluster is the `scheduling_policy`. This option accepts two values, `locality`, and `random`, and controls whether the tasks spawned will be offloaded to the nodes based on their locality of data, or completely at random, respectively. When developing distributed applications with OmpSs-2@Cluster, it is wise to test with the `random` scheduling option, as `locality` might hide bugs due to restricting the computation in certain compute nodes.
 
 ```sh
 [cluster]
@@ -457,7 +457,7 @@ While at the `cluster` tab, an option worthy of note when developing application
 
 ### Configuring the kernel
 
-While the traditional version of OmpSs doesn't require any system configurations, cluster execution requires the system to have disabled the address randomization feature. Moreover, depending on the total memory requested for an application, i.e. `cluster.local_memory` and `cluster.distributed_memory`, there might be need to enable the overcommit feature in the kernel.
+While the traditional version of OmpSs-2 doesn't require any system configurations, OmpSs-2@Cluster execution requires the system to have disabled the address randomization feature. Moreover, depending on the total memory requested for an application (i.e., `cluster.local_memory` and `cluster.distributed_memory`) there might be a need to enable the overcommit feature in the kernel.
 
 ```sh
 # Disable address randomization
