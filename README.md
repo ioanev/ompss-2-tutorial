@@ -101,6 +101,14 @@ The validity of the results is being checked by serially executing the kernel (n
 /* _implicit barrier_ */
 ```
 
+![openmp](./imgs/tiled_openmp.png "OpenMP matrix multiplication implementation")
+
+<div align="center">
+
+*OpenMP workload distribution and execution workflow*
+
+</div>
+
 ### OmpSs-2 implementation
 
 The full source code of the implementation can be found [here](https://github.com/IoanAnev/ompss-tutorial/blob/master/code/matmul-ompss-2.cpp).
@@ -187,9 +195,20 @@ matmul_opt()
 }
 ```
 
+> **NOTE:**
+> As there is no explicit synchronization between the initialization of matrices and the computation, we do not exclusively count computation when executing `matmul_opt`, but a part of initialization as well. This is because initialization of blocks will most probably still be served since the timer has started, and their computation will be stalled, till the former has been completed.
+
 #### Verification
 
 The verification of the results is left to be taken care of by the main thread, as we are guaranteed to see the updated values of the memory being worked on during the computation, by directly dereferencing. Of course, verification can also be handled within tasks.
+
+![ompss2](./imgs/tiled_ompss2.png "OmpSs-2 matrix multiplication implementation")
+
+<div align="center">
+
+*OmpSs-2 workload distribution and execution workflow*
+
+</div>
 
 ### OmpSs-2@Cluster implementation
 
@@ -329,6 +348,14 @@ void matmul_ref(
     double (*mat_b)[N],
     double (*mat_r)[N]);
 ```
+
+![ompss2_cluster](./imgs/tiled_ompss2_cluster.png "OmpSs-2@Cluster matrix multiplication implementation")
+
+<div align="center">
+
+*OmpSs-2@Cluster workload distribution and execution workflow*
+
+</div>
 
 ## Installation
 
