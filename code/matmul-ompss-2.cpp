@@ -1,10 +1,6 @@
-/* An OmpSs-2 implementation of matrix multiplication.
- *
- * It receives as input the dimension N and constructs three NxN matrices
- * (+1 for verification). We can enable verification with the -v argument.
- *
- * We initialize the matrices with prefixed values which we can later
- * check to ensure correctness of the computations.
+/**
+ * @file
+ * @brief An OmpSs-2 implementation of matrix multiplication.
  */
 
 #include <string>
@@ -49,11 +45,11 @@ void init_block(
 		double (*)[N]);
 
 /**
- * @note: directives are outlined,
+ * @note: Directives are outlined,
  *        and as such, all function
  *        invocations become a task
  * 
- * @warning: the parameter names
+ * @warning: The parameter names
  *           need to be included
  */
 #pragma oss task		\
@@ -124,9 +120,7 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
  
-	/**
-	 * allocate the matrices using C++ new[]
-	 */
+	/* Allocate the matrices using C++ `new` */
 	mat_a = new double[N][N];
 	mat_b = new double[N][N];
 	mat_c = new double[N][N];
@@ -135,9 +129,7 @@ main(int argc, char *argv[])
         init_matrices();
         run_matmul(verify);
 
-	/**
-	 * deallocate the matrices using C++ delete[]
-	 */
+	/* Deallocate the matrices using `delete` */
 	delete[] mat_a;
 	delete[] mat_b;
 	delete[] mat_c;
@@ -155,9 +147,6 @@ init_block(const int &i,
 	   double (*mat_c)[N],
 	   double (*mat_r)[N])
 {
-	/**
-	 * block-based initialization for cache-friendly accesses
-	 */
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
 			mat_c[ii][jj] = 0.0;
@@ -172,16 +161,14 @@ void
 init_matrices()
 {
 	/**
-	 * @note: the initialization of the global matrices can
+	 * @note: The initialization of the global matrices can
 	 *        also be handled by the master or by any thread
 	 */
 
+	/* Parallelize for better NUMA node data distribution */
         for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
-			/**
-			 * task-based initialization for a uniform NUMA
-			 * node data distribution
-			 */
+			 /* Spawn a task for each individual block */
 			#pragma oss task				\
 					out(mat_a[i;BSIZE][j;BSIZE],	\
 					    mat_b[i;BSIZE][j;BSIZE],	\
@@ -191,6 +178,13 @@ init_matrices()
 			init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
 		}
         }
+
+	/*
+	 * We need to wait for the tasks to finish before moving to the
+	 * computation, not for correctness reasons, but solely for co-
+	 * nsistency in the performance measurements
+	 */
+	#pragma oss taskwait
 }
 
 void
@@ -202,9 +196,6 @@ multiply_block(const int i,
 	       double (*mat_b)[N],
 	       double (*mat_c)[N])
 {
-		/**
-		 * block-based computation for cache-friendly accesses
-		 */
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {
 				for (int kk = k; kk < k+bsize; kk++) {
@@ -217,19 +208,18 @@ multiply_block(const int i,
 void
 matmul_opt()
 {
+	/* Parallel block-based computation */
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			for (int k = 0; k < N; k += BSIZE) {
-				/**
-				 * spawn a task for each block computation
-				 */
+				/* Spawn a task for each individual block */
 				multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
 			}
 		}
 	}
 
-	/**
-	 * we need to wait for the tasks to finish before deallocating
+	/*
+	 * We need to wait for the tasks to finish before deallocating
 	 * the global data structures (in the case of verification=OFF),
 	 * and for correct measurements
 	 */
@@ -240,13 +230,11 @@ void
 matmul_ref()
 {
 	/**
-	 * @note: the serial execution can be handled by any thread or
+	 * @note: The serial execution can be handled by any thread or
 	 *        by the master as in this case
 	 */
 
-	/**
-	 * serial execution of matrix multiplication for verification
-	 */
+	/* Serial execution of matrix multiplication for verification */
         for (int i = 0; i < N; i++) {
                 for (int j = 0; j < N; j++) {
                         for (int k = 0; k < N; k++) {
@@ -260,12 +248,13 @@ void
 verify_results()
 {
 	/**
-	 * @note: the verification can be handled by any thread or
+	 * @note: The verification can be handled by any thread or
 	 *        by the master as in this case
 	 */
 
 	double e_sum{0.0};
 
+	/* Verify the results by finding the error between mat_c and mat_r */
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
 			e_sum += (mat_c[i][j] < mat_r[i][j])

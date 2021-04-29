@@ -6,7 +6,7 @@ This is a small tutorial on how to convert OpenMP applications to run on the Omp
 
 ## The Simple Example
 
-The example concerns a naive matrix multiplication implementation, which is a kernel operation that calculates the product of two matrices. It is meant as an introduction to OmpSs-2 and OmpSs-2@Cluster and its differences with non-task-based and non-distributed applications. It is written in C++.
+The example concerns a naive blocked matrix multiplication implementation, which is a kernel operation that calculates the product of two matrices. It is meant as an introduction to OmpSs-2 and OmpSs-2@Cluster and its differences with non-task-based and non-distributed applications. It is written in C++.
 
 ### OpenMP implementation
 
@@ -101,7 +101,7 @@ The validity of the results is being checked by serially executing the kernel (n
 /* _implicit barrier_ */
 ```
 
-![openmp](./imgs/tiled_openmp.png "OpenMP matrix multiplication implementation")
+![omp](./imgs/matmul-omp.png "OpenMP matrix multiplication implementation")
 
 <div align="center">
 
@@ -119,11 +119,11 @@ Since operation is still being done on the shared memory level, there is no diff
 
 #### Initialization
 
-OmpSs being a task-based runtime system, the way we distribute work differs from the OpenMP method of parallelization used in the current example. In this example, we choose to associate a task to each tile to be computed. That said, the main thread iterates over the loops and keeps spawning tasks, which then reside in the task pool, ready to be served by a team of threads. Which thread computes which tile is chosen by the runtime.
+OmpSs-2 being a task-based runtime system, the way we distribute work differs from the OpenMP method of parallelization used in the current example. In this example, we choose to associate a task to each tile to be computed. That said, the main thread iterates over the loops and keeps spawning tasks, which then reside in the task pool, ready to be served by a team of threads. Which thread computes which tile is chosen by the runtime.
 
 The tasks need to also include directionality annotations based on the type of accesses being done to the data structures operated in the task body. As the matrices are only written during initialization, we enclose them in the `out` clause. Aside from expressing data direction, we need to specify which section of data is going to be operated by each task, in order to build proper dependencies between tasks, and thus effectively avoid data races.
 
-In OmpSs, directives can be _inlined_ or _outlined_. When inlined, the `pragma` applies immediatly to the following statement, and the compiler outlines that statement as in OpenMP. The code block below presents an example of inlined directives.
+In OmpSs-2, directives can be _inlined_ or _outlined_. When inlined, the `pragma` applies immediately to the following statement, and the compiler outlines that statement as in OpenMP. The code block below presents an example of inlined directives.
 
 ```cpp
 void
@@ -145,11 +145,20 @@ init_matrices()
               mat_r[i;BSIZE][j;BSIZE]) \
           firstprivate(i, j, BSIZE)
       init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
+
+  /*
+   * We need to wait for the tasks to finish before moving to the
+   * computation, not for correctness reasons, but solely for co-
+   * nsistency in the performance measurements
+   */
+  #pragma oss taskwait
 }
 ```
 
+As there is no implicit mechanism in the OmpSs-2 programming model for imposing a "barrier" whenever necessary, the `taskwait` construct needs to be explicitly issued. This construct, blocks the current control flow of the program, until the completion of all the direct descendant tasks. Note that including a `taskwait` here is not necessary to ensure correctness of the application, due to the implicit synchronization imposed from the task dependencies between the initialization and the computation part. Explicit synchronization is included here for accurate performance measurements.
+
 > **NOTE:**
-> The plain OmpSs version is very relaxed in the way its dependencies are specified, in contrast to the cluster version. It allows the use of sentinels as representatives of a larger section of the data structures. However, despite this amenity that it provides, it is good practice to provide as much information as possible to the runtime regarding the data access pattern, for portability and compatibility reasons.
+> The plain OmpSs-2 version is very relaxed in the way its dependencies are specified, in contrast to the cluster version. It allows the use of sentinels as representatives of a larger section of the data structures. However, despite this amenity that it provides, it is good practice to provide as much information as possible to the runtime regarding the data access pattern, for portability and compatibility reasons.
 
 #### Computation
 
@@ -159,6 +168,7 @@ The execution of the matrix multiplication kernel is similar to the initializati
 /**
  * @note: Directives are outlined, and as such,
  *        all function invocations become a task
+ * 
  * @warning: The parameter names need to be included
  */
 #pragma oss task               \
@@ -172,8 +182,6 @@ multiply_block(
 ```
 
 Another difference, is that the `pragma` directive now includes two different dependency clauses, namely `in`, and `inout`. The former, encloses the two input matrices as they are only read during computation, while the latter, encloses the output matrix, of which parts are accumulated with the execution of each task. These two, in conjuction with the `out` dependency clause, make up for all the basic strong dependency clauses.
-
-As there is no implicit mechanism in the OmpSs programming model for imposing a "barrier" whenever necessary, the `taskwait` construct needs to be explicitly issued. This construct, blocks the current control flow of the program, until the completion of all the direct descendant tasks. Notice that a `taskwait` is not included between the initialization and computation, due to the implicit synchronization imposed from the task dependencies.
 
 ```cpp
 void
@@ -196,13 +204,13 @@ matmul_opt()
 ```
 
 > **NOTE:**
-> As there is no explicit synchronization between the initialization of matrices and the computation, we do not exclusively count computation when executing `matmul_opt`, but a part of initialization as well. This is because initialization of blocks will most probably still be served since the timer has started, and their computation will be stalled, till the former has been completed.
+> If there is no explicit synchronization between the initialization of matrices and the computation, we do not exclusively count computation when executing `matmul_opt`, but a part of initialization as well. This is because initialization of blocks will most probably still be served since the timer has started, and their computation will be stalled, till the former has been completed.
 
 #### Verification
 
 The verification of the results is left to be taken care of by the main thread, as we are guaranteed to see the updated values of the memory being worked on during the computation, by directly dereferencing. Of course, verification can also be handled within tasks.
 
-![ompss2](./imgs/tiled_ompss2.png "OmpSs-2 matrix multiplication implementation")
+![ompss-2](./imgs/matmul-ompss-2.png "OmpSs-2 matrix multiplication implementation")
 
 <div align="center">
 
@@ -313,19 +321,23 @@ dfree<double>(mat_r, N * N);
 
 #### Initialization & Computation
 
-One of the characteristics of the cluster version of OmpSs, aside from its memory model, is its more strict data-flow semantics over traditional OmpSs. Having said that, it requires the programmer to specify all the memory accesses that happen inside a task in its dependency list, without allowing the use of defining only a subset of the them. If the program is not annotated correctly, proper ordering will not be enforced between tasks and incorrect results will likely be observed.
+One of the characteristics of the cluster version of OmpSs-2, aside from its memory model, is its more strict data-flow semantics over traditional OmpSs-2. Having said that, it requires the programmer to specify all the memory accesses that happen inside a task in its dependency list, without allowing the use of defining only a subset of them. That is because, in the cluster version, data location information is also passed through the dependency system. Hence, if a program is not annotated correctly, the latest version of the data will not be transferred to the node that needs it, leading to incorrect results.
 
 From the above statements, it can be deduced that any OmpSs-2@Cluster program is a correct shared memory OmpSs-2 program as well, but not vice versa. As far as the current application is concerned, the initialization and computation sections are compatible between the traditional and the cluster version of OmpSs-2, as the relevant code blocks were initially profoundly annotated.
 
 #### Verification
 
-Due to the restrictions for accessing distributed memory, the functions related to verification need to be taskified, in order to avoid runtime access errors and reading outdated values. Of course, after this modification, `taskwait` clauses need to be included after the invocation of these functions, for correct performance measurements and early program termination avoidance.
+Due to the restrictions for dereferencing distributed memory, the functions related to verification need to be taskified, in order to avoid runtime access errors and reading outdated values. Of course, after this modification, `taskwait` clauses need to be included after the invocation of these functions, for correct performance measurements and early program termination avoidance.
 
 ```cpp
 /**
  * @note: Directives are outlined, and as such,
  *        all function invocations become a task
+ * 
  * @warning: The parameter names need to be included
+ * @warning: Cannot use the preprocessor N for depe-
+ *           ndency specification, so we use a dyna-
+ *           mic variant instead; NSIZE (NSIZE == N)
  */
 #pragma oss task               \
 in(mat_c[0;NSIZE][0;NSIZE],    \
@@ -337,7 +349,11 @@ void verify_results(
 /**
  * @note: Directives are outlined, and as such,
  *        all function invocations become a task
+ * 
  * @warning: The parameter names need to be included
+ * @warning: Cannot use the preprocessor N for depe-
+ *           ndency specification, so we use a dyna-
+ *           mic variant instead; NSIZE (NSIZE == N)
  */
 #pragma oss task               \
 in(   mat_a[0;NSIZE][0;NSIZE], \
@@ -349,7 +365,7 @@ void matmul_ref(
     double (*mat_r)[N]);
 ```
 
-![ompss2_cluster](./imgs/tiled_ompss2_cluster.png "OmpSs-2@Cluster matrix multiplication implementation")
+![ompss-2-cluster](./imgs/matmul-ompss-2-cluster.png "OmpSs-2@Cluster matrix multiplication implementation")
 
 <div align="center">
 
@@ -361,7 +377,7 @@ void matmul_ref(
 
 ### Build requirements
 
-For this tutorial, you will need to have OpenMP available on your local machine, as well as compiled and installed the [Mercurium compiler](https://github.com/bsc-pm/mcxx) and the Nano6 runtime library. Note that if you are interested in running applications solely on the shared memory level, installing the plain [nanos6](https://github.com/bsc-pm/nanos6) version of the runtime is sufficient. However, if you are interested in scaling the application to the cluster level, it is advised to use the [nanos6-cluster](https://github.com/bsc-pm/nanos6-cluster) version.
+For this tutorial, you will need to have OpenMP available on your local machine, as well as compiled and installed the [Mercurium compiler](https://github.com/bsc-pm/mcxx) and the Nanos6 runtime library. Note that if you are interested in running applications solely on the shared memory level, installing the plain [nanos6](https://github.com/bsc-pm/nanos6) version of the runtime is sufficient. However, if you are interested in scaling the application to the cluster level, it is advised to use the [nanos6-cluster](https://github.com/bsc-pm/nanos6-cluster) version.
 
 ### Building the application
 
@@ -424,7 +440,7 @@ There are certain variables that need to be modified in order to be able to run 
     dependencies = "regions"
 ```
 
-The second variable that needs to be set, is just as critical as the former, and is the _communication layer_ that will be used by the Nanos6 runtime for cluster communication. The Nano6 runtime supports two communication layers, 2-sided MPI, and ArgoDSM, and is enabled by setting the `cluster.communication` variable to `mpi-2sided` or `argodsm`, respectively.
+The second variable that needs to be set, is just as critical as the former, and is the _communication layer_ that will be used by the Nanos6 runtime for cluster communication. The Nanos6 runtime supports two communication layers, 2-sided MPI, and ArgoDSM, and is enabled by setting the `cluster.communication` variable to `mpi-2sided` or `argodsm`, respectively.
 
 ```sh
 [cluster]
@@ -433,20 +449,33 @@ The second variable that needs to be set, is just as critical as the former, and
     communication = "argodsm"
 ```
 
-Once the above variables have been set, the program is able to be run on the cluster setting. That is of course, if the default memory values present in the configuration file is enough for the memory demand of the application. If the default memory allocation is not sufficient, the values `distributed_memory` and `local_memory` under the `cluster` section can be modified.
+Once the above variables have been set, the program is able to be run on the cluster setting. That is of course, if the default memory values present in the configuration file is enough for the memory demand of the application. If the default memory allocation is not sufficient, then depending on the communication layer of choice, the memory values under the `cluster` or `argo` tab would need to be edited. For `mpi-2sided`, `cluster.distributed_memory` would need to be modified, while for `argodsm`, `argo.distributed_memory` and `argo.cache_size`.
 
 ```sh
 [cluster]
-    # Choose the distributed memory for Cluster mode. Default is 2GB
+    # Choose the distributed memory for Cluster mode. Default is   2GB
     distributed_memory = "2G"
-    # Choose the local memory for Cluster mode. Default is 2GB
+    # Choose the local memory for Cluster mode.       Default is   2GB
     local_memory = "2G"
+[argodsm]
+    # Choose the distributed memory for ArgoDSM mode. Default is 512MB
+    distributed_memory = "512M"
+    # Choose the cache size for ArgoDSM mode.         Default is 512MB
+    cache_size = "512M"
 ```
 
 > **NOTE:**
-> In spite of the fact that the `local_memory` variable is under the `cluster` tab, there might need for it to be increased when running shared memory applications as well, as it defines the memory budget reserved by the system for instantiating tasks.
+> In spite of the fact that the `local_memory` variable is under the `cluster` tab, there might be need for it to be increased regardless of the communication layer chosen, and the memory level in which we are operating. This is because `local_memory` defines the memory budget reserved by the system for instantiating tasks.
 
-While at the `cluster` tab, an option worthy of note when developing applications for OmpSs-2@Cluster is the `scheduling_policy`. This option accepts two values, `locality`, and `random`, and controls whether the tasks spawned will be offloaded to the nodes based on their locality of data, or completely at random, respectively. When developing distributed applications with OmpSs-2@Cluster, it is wise to test with the `random` scheduling option, as `locality` might hide bugs due to restricting the computation in certain compute nodes.
+A memory option that might also need to be increased and is related to `local_memory`, is `misc.stack_size`. This option would need to be increased in case there is not enough space to hold the data structures allocated inside the task scope. Note that increasing `stack_size`, might result in the need of increasing `local_memory` as well, as the latter holds the stack memory of the instantiated tasks.
+
+```sh
+[misc]
+    # Stack size of threads created by the runtime. Default is 8M
+    stack_size = "8M"
+```
+
+An option worthy of note when developing applications for OmpSs-2@Cluster, is the `scheduling_policy` under the `cluster` tab. This option accepts two values, `locality`, and `random`, and controls whether the tasks spawned will be offloaded to the nodes based on their locality of data, or completely at random, respectively. When developing distributed applications with OmpSs-2@Cluster, it is wise to test with the `random` scheduling option, as `locality` might hide bugs due to restricting the computation in certain compute nodes.
 
 ```sh
 [cluster]

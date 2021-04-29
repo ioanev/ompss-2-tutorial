@@ -1,10 +1,6 @@
-/* An OpenMP implementation of matrix multiplication.
- *
- * It receives as input the dimension N and constructs three NxN matrices
- * (+1 for verification). We can enable verification with the -v argument.
- *
- * We initialize the matrices with prefixed values which we can later
- * check to ensure correctness of the computations.
+/**
+ * @file
+ * @brief An OpenMP implementation of matrix multiplication.
  */
 
 #include <string>
@@ -111,9 +107,7 @@ main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
  
-	/**
-	 * allocate the matrices using C++ new[]
-	 */
+	/* Allocate the matrices using C++ `new` */
 	mat_a = new double[N][N];
 	mat_b = new double[N][N];
 	mat_c = new double[N][N];
@@ -125,9 +119,7 @@ main(int argc, char *argv[])
 		run_matmul(verify);
 	}
 
-	/**
-	 * deallocate the matrices using C++ delete[]
-	 */
+	/* Deallocate the matrices using `delete` */
 	delete[] mat_a;
 	delete[] mat_b;
 	delete[] mat_c;
@@ -145,9 +137,6 @@ init_block(const int &i,
 	   double (*mat_c)[N],
 	   double (*mat_r)[N])
 {
-	/**
-	 * block-based initialization for cache-friendly accesses
-	 */
 	for (int ii = i; ii < i+bsize; ii++) {
 		for (int jj = j; jj < j+bsize; jj++) {
 			mat_c[ii][jj] = 0.0;
@@ -162,19 +151,19 @@ void
 init_matrices()
 {
 	/**
-	 * @note: the initialization of the global matrices can
+	 * @note: The initialization of the global matrices can
 	 *        also be handled by the master or by any thread
 	 */
 
-	/**
-	 * parallelize initialization for a uniform NUMA node data distribution
-	 */
+	/* Parallelize for better NUMA node data distribution */
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
+			/* Init. a block for cache-friendly accesses */
 			init_block(i, j, BSIZE, mat_a, mat_b, mat_c, mat_r);
 		}
 	}
+	/* _implicit barrier_ */
 }
 
 void
@@ -186,9 +175,6 @@ multiply_block(const int &i,
 	       double (*mat_b)[N],
 	       double (*mat_c)[N])
 {
-		/**
-		 * block-based computation for cache-friendly accesses
-		 */
 		for (int ii = i; ii < i+bsize; ii++) {
 			for (int jj = j; jj < j+bsize; jj++) {
 				for (int kk = k; kk < k+bsize; kk++) {
@@ -201,30 +187,28 @@ multiply_block(const int &i,
 void
 matmul_opt()
 {
-	/**
-	 * parallel block-based computation
-	 */
+	/* Parallel block-based computation */
 	#pragma omp for
 	for (int i = 0; i < N; i += BSIZE) {
 		for (int j = 0; j < N; j += BSIZE) {
 			for (int k = 0; k < N; k += BSIZE) {
+				/* Compute an individual block */
 				multiply_block(i, j, k, BSIZE, mat_a, mat_b, mat_c);
 			}
 		}
 	}
+	/* _implicit barrier_ */
 }
 
 void
 matmul_ref()
 {
 	/**
-	 * @note: the serial execution can be handled by the master or
+	 * @note: The serial execution can be handled by the master or
 	 *        by any thread as in this case
 	 */
 
-	/**
-	 * serial execution of matrix multiplication for verification
-	 */
+	/* Serial execution of matrix multiplication for verification */
         for (int i = 0; i < N; i++) {
                 for (int j = 0; j < N; j++) {
                         for (int k = 0; k < N; k++) {
@@ -238,12 +222,13 @@ void
 verify_results()
 {
 	/**
-	 * @note: the verification can be handled by the master or
+	 * @note: The verification can be handled by the master or
 	 *        by any thread as in this case
 	 */
 
 	double e_sum{0.0};
 
+	/* Verify the results by finding the error between mat_c and mat_r */
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
 			e_sum += (mat_c[i][j] < mat_r[i][j])
@@ -285,12 +270,14 @@ run_matmul(const int& verify)
 		#pragma omp master
 		time_start = get_time();
 		#pragma omp single
-		matmul_ref();
+			matmul_ref();
+		/* _implicit barrier_ */
 		#pragma omp master
 		time_stop = get_time();
 
 		#pragma omp single
-		verify_results();
+			verify_results();
+		/* _implicit barrier_ */
 		#pragma omp master
 		std::cout << "Reference runtime: " << time_stop - time_start
 			  << std::endl;
