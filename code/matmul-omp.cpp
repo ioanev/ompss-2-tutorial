@@ -260,7 +260,7 @@ run_matmul(const int& verify)
 	{
 		std::cout.precision(4);
 		std::cout << "Time: " << time_stop - time_start
-			<< std::endl;
+			  << std::endl;
 	}
 
 	if (verify) {
